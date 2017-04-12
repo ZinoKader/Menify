@@ -3,7 +3,7 @@
 Mac OS X status bar "now playing" for Spotify.
 Lives in the menu bar and doesn't bother you. 
 
-Sucks for very long song names, so if you're into Chopin, turn around!
+For long titles, the text will scroll back and forth to reveal the whole song title.
 
 Looks like this
 -----
