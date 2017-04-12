@@ -8,7 +8,7 @@ Sucks for very long song names, so if you're into Chopin, turn around!
 Looks like this
 -----
 
-![Sample](https://www.zinokader.se/img/menify/sample.png)
+![Sample](https://www.zinokader.se/img/menify/sampl.png)
 
 How to run it
 -----
