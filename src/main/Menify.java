@@ -24,11 +24,38 @@ import java.util.concurrent.TimeUnit;
 public class Menify extends Application {
 
     private static final int EOF = -1;
+
     private static final String ADD_TO_STARTUP =
             "tell application \"System Events\" \n" +
             "  make new login item at end of login items with properties" +
                     " {name:\"Menify\", path:(POSIX path of (path to application \"Menify\")), hidden:true}\n" +
             "end tell";
+
+    private static final String SPOTIFY_META_DATA_SCRIPT = "tell application \"System Events\"\n" +
+            "  set myList to (name of every process)\n" +
+            "end tell\n" +
+            "if myList contains \"Spotify\" then\n" +
+            "  tell application \"Spotify\"\n" +
+            "    if player state is paused then\n" +
+            "      set output to \"Music paused\"\n" +
+            "    else\n" +
+            "      set trackname to name of current track\n" +
+            "      set artistname to artist of current track\n" +
+            "      set albumname to album of current track\n" +
+            "      if player state is playing then\n" +
+            "        set output to artistname & \" - \" & trackname & \"\"\n" +
+            "      else if player state is paused then\n" +
+            "        set output to artistname & \" - \" & trackname & \"\"\n" +
+            "      end if\n" +
+            "    end if\n" +
+            "  end tell\n" +
+            "else\n" +
+            "  set output to \"Spotify not running\"\n" +
+            "end if";
+
+    public static void main(String[] args) {
+        launch(args);
+    }
 
     @Override
     public void start(Stage primaryStage) throws Exception {
@@ -46,7 +73,6 @@ public class Menify extends Application {
             Graphics2D g2d = image.createGraphics();
             g2d.setFont(getHelvetiva(13));
             setRenderingHints(g2d);
-            g2d.drawString("No music playing", 160, 13);
 
             ActionListener quitListener = e -> System.exit(0);
             ActionListener startUpAddListener = e -> eval(ADD_TO_STARTUP);
@@ -79,32 +105,11 @@ public class Menify extends Application {
                 BufferedImage updatedImage = new BufferedImage(300, 16, BufferedImage.TYPE_INT_ARGB);
                 Graphics2D updatedG2d = updatedImage.createGraphics();
 
-                String spotifyMetaDataScript = "tell application \"System Events\"\n" +
-                        "  set myList to (name of every process)\n" +
-                        "end tell\n" +
-                        "if myList contains \"Spotify\" then\n" +
-                        "  tell application \"Spotify\"\n" +
-                        "    if player state is stopped then\n" +
-                        "      set output to \"Stopped\"\n" +
-                        "    else\n" +
-                        "      set trackname to name of current track\n" +
-                        "      set artistname to artist of current track\n" +
-                        "      set albumname to album of current track\n" +
-                        "      if player state is playing then\n" +
-                        "        set output to artistname & \" - \" & trackname & \"\"\n" +
-                        "      else if player state is paused then\n" +
-                        "        set output to artistname & \" - \" & trackname & \"\"\n" +
-                        "      end if\n" +
-                        "    end if\n" +
-                        "  end tell\n" +
-                        "else\n" +
-                        "  set output to \"Spotify not running\"\n" +
-                        "end if";
+                String spotifyMetaData = eval(SPOTIFY_META_DATA_SCRIPT);
 
-                String spotifyMetaData = eval(spotifyMetaDataScript);
-
+                System.out.println(spotifyMetaData);
                 if(spotifyMetaData != null && spotifyMetaData.isEmpty()) {
-                    spotifyMetaData = "No music playing";
+                    spotifyMetaData = "Music paused";
                 }
 
                 setRenderingHints(updatedG2d);
@@ -230,8 +235,4 @@ public class Menify extends Application {
         return count;
     }
 
-
-    public static void main(String[] args) {
-        launch(args);
-    }
 }
