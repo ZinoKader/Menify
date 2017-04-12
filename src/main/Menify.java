@@ -3,55 +3,44 @@ package main;
 import com.oracle.tools.packager.Log;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.scene.control.Alert;
 import javafx.stage.Stage;
-
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 
 /**
- * This shit was thrown together way too fast for you to even think about judging the code
+ * Menify by
+ * Zino Kader 2017
+ * https://www.zinokader.se
  */
 
 public class Menify extends Application {
 
-    private static final int EOF = -1;
+    private static final int STATUS_BAR_WIDTH = 300;
+    private static final int STATUS_BAR_HEIGHT = 16;
+    private static final int HORIZONTAL_OFFSET = 20;
+    private static final int VERTICAL_OFFSET = 13;
 
-    private static final String ADD_TO_STARTUP =
-            "tell application \"System Events\" \n" +
-            "  make new login item at end of login items with properties" +
-                    " {name:\"Menify\", path:(POSIX path of (path to application \"Menify\")), hidden:true}\n" +
-            "end tell";
+    private static final int DEFAULT_FONT_SIZE = 13;
+    private static final String DEFAULT_FONT = "San Francisco";
 
-    private static final String SPOTIFY_META_DATA_SCRIPT = "tell application \"System Events\"\n" +
-            "  set myList to (name of every process)\n" +
-            "end tell\n" +
-            "if myList contains \"Spotify\" then\n" +
-            "  tell application \"Spotify\"\n" +
-            "    if player state is paused then\n" +
-            "      set output to \"Music paused\"\n" +
-            "    else\n" +
-            "      set trackname to name of current track\n" +
-            "      set artistname to artist of current track\n" +
-            "      set albumname to album of current track\n" +
-            "      if player state is playing then\n" +
-            "        set output to artistname & \" - \" & trackname & \"\"\n" +
-            "      else if player state is paused then\n" +
-            "        set output to artistname & \" - \" & trackname & \"\"\n" +
-            "      end if\n" +
-            "    end if\n" +
-            "  end tell\n" +
-            "else\n" +
-            "  set output to \"Spotify not running\"\n" +
-            "end if";
+    private AppleScriptHelper appleScriptHelper = new AppleScriptHelper();
+    private TrayIcon trayIcon;
+
+    //start scrolling at these offsets
+    private int scrollX = HORIZONTAL_OFFSET;
+    private int scrollY = VERTICAL_OFFSET;
+    private ScrollDirection scrollDirection = ScrollDirection.LEFT; //scroll to left as default
+
+    private ScheduledExecutorService mainExecutor = Executors.newScheduledThreadPool(1);
+
+    private String spotifyMetaData;
+    private String previousSpotifyMetaData;
 
     public static void main(String[] args) {
         launch(args);
@@ -60,179 +49,140 @@ public class Menify extends Application {
     @Override
     public void start(Stage primaryStage) throws Exception {
 
+        //Let application live on even if no window is showing
         Platform.setImplicitExit(false);
         primaryStage.hide();
 
-        TrayIcon trayIcon;
-
-        if (SystemTray.isSupported()) {
+        if(SystemTray.isSupported()) {
 
             SystemTray tray = SystemTray.getSystemTray();
 
-            BufferedImage image = new BufferedImage(300, 16, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g2d = image.createGraphics();
-            g2d.setFont(getHelvetiva(13));
-            setRenderingHints(g2d);
+            BufferedImage placeholderImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
 
-            ActionListener quitListener = e -> System.exit(0);
-            ActionListener startUpAddListener = e -> eval(ADD_TO_STARTUP);
+            ActionListener quitListener = action -> System.exit(0);
+            ActionListener startupAddListener = action -> appleScriptHelper.evalAppleScript(ScriptConstants.ADD_TO_STARTUP);
+            ActionListener startupRemoveListener = action -> appleScriptHelper.evalAppleScript(ScriptConstants.REMOVE_FROM_STARTUP);
 
-            PopupMenu popup = new PopupMenu();
+            PopupMenu popupMenu = new PopupMenu();
 
-            MenuItem addToStartupItem = new MenuItem("Start Menify with login");
+            MenuItem addToStartupItem = new MenuItem("Start Menify on login");
+            MenuItem removeFromStartupItem = new MenuItem("Remove Menify from startup");
             MenuItem quitItem = new MenuItem("Quit");
 
-            addToStartupItem.addActionListener(startUpAddListener);
+            addToStartupItem.addActionListener(startupAddListener);
+            removeFromStartupItem.addActionListener(startupRemoveListener);
             quitItem.addActionListener(quitListener);
-            popup.add(addToStartupItem);
-            popup.add(quitItem);
 
-            trayIcon = new TrayIcon(image, "", popup);
+            popupMenu.add(addToStartupItem);
+            popupMenu.add(removeFromStartupItem);
+            popupMenu.add(quitItem);
 
-            trayIcon.setImageAutoSize(true);
-            trayIcon.addActionListener(quitListener);
+            trayIcon = new TrayIcon(placeholderImage, "", popupMenu);
 
             try {
                 tray.add(trayIcon);
             } catch (AWTException e) {
+                Log.debug("Failed to add application to tray");
                 e.printStackTrace();
                 System.exit(0);
             }
 
-
             Runnable refreshPlayingText = () -> {
-
-                BufferedImage updatedImage = new BufferedImage(300, 16, BufferedImage.TYPE_INT_ARGB);
-                Graphics2D updatedG2d = updatedImage.createGraphics();
-
-                String spotifyMetaData = eval(SPOTIFY_META_DATA_SCRIPT);
-
-                System.out.println(spotifyMetaData);
-                if(spotifyMetaData != null && spotifyMetaData.isEmpty()) {
-                    spotifyMetaData = "Music paused";
+                spotifyMetaData = appleScriptHelper.evalAppleScript(ScriptConstants.SPOTIFY_META_DATA_SCRIPT);
+                if(spotifyMetaData != null) {
+                    drawText(spotifyMetaData);
+                    previousSpotifyMetaData = spotifyMetaData;
                 }
-
-                setRenderingHints(updatedG2d);
-                updatedG2d.setFont(getHelvetiva(13));
-                FontMetrics fm = updatedG2d.getFontMetrics();
-
-                drawTextWrapped(spotifyMetaData, fm, updatedG2d);
-
-                trayIcon.setImage(updatedImage);
             };
 
+            //update every 50ms
+            mainExecutor.scheduleAtFixedRate(refreshPlayingText, 0, 50, TimeUnit.MILLISECONDS);
 
-            //update every 0.5s
-            ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
-            executor.scheduleAtFixedRate(refreshPlayingText, 0, 500, TimeUnit.MILLISECONDS);
-
-        } else {
-            Log.debug("closing because system tray is not supported");
+        }
+        else {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("System Tray not supported");
+            alert.setHeaderText("Could not start Menify");
+            alert.setContentText("System Tray applications are not supported in your operating system, sorry!");
+            alert.showAndWait();
+            Log.debug("Exiting: system tray is not supported");
             System.exit(0);
         }
 
 
     }
 
-    private Font getHelvetiva(int size) {
-        return new Font("Helvetiva Neue", Font.PLAIN, size);
-    }
+    private void drawText(String text) {
 
-    private void drawTextWrapped(String text, FontMetrics textMetrics, Graphics2D g2d) {
+        BufferedImage staticImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D staticG2d = staticImage.createGraphics();
+        setAntiAliasing(staticG2d);
+        staticG2d.setFont(getDefaultFont(DEFAULT_FONT_SIZE));
 
+        BufferedImage scrollingImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D scrollingG2d = scrollingImage.createGraphics();
+        setAntiAliasing(scrollingG2d);
+        scrollingG2d.setFont(getDefaultFont(13));
 
-        int startX = ((300 - textMetrics.stringWidth(text)) / 2); //center text
-        int startY = 13;
+        resetScrollingPositions();
 
-        g2d.setFont(getHelvetiva(g2d.getFont().getSize()));
+        //check if the text is too long and needs to be displayed in a scrolling fashion
+        if(textShouldScroll(text, staticG2d)) {
 
-        if(text.length() > 100) {
-            startX = ((300 - textMetrics.stringWidth("Title too long")) / 2); //recenter based on "too long"-text
-            g2d.drawString("Title too long", startX, startY);
+            int textWidth = scrollingG2d.getFontMetrics().stringWidth(text);
 
-        } else {
-
-            while (textMetrics.stringWidth(text) > 295) {
-
-                g2d.setFont(getHelvetiva(g2d.getFont().getSize() - 1));
-
-                float newSize;
-                Font newFont;
-
-                //I'd rather not do proper math on a weekend, thank you very much
-                if (textMetrics.stringWidth(text) > 420) {
-                    newSize = (float) (g2d.getFont().getSize() - 1.4);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 47;
-                }
-                else if (textMetrics.stringWidth(text) > 400) {
-                    newSize = (float) (g2d.getFont().getSize() - 1.4);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 43;
-                } else if (textMetrics.stringWidth(text) > 380) {
-                    newSize = (float) (g2d.getFont().getSize() - 1.6);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 55;
-                } else if (textMetrics.stringWidth(text) > 360) {
-                    newSize = (float) (g2d.getFont().getSize() - 1.5);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 40;
-                } else if (textMetrics.stringWidth(text) > 345) {
-                    newSize = (float) (g2d.getFont().getSize() - 1.4);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 35;
-                } else if (textMetrics.stringWidth(text) > 330) {
-                    newSize = (float) (g2d.getFont().getSize() - 0.75);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 26;
-                } else {
-                    newSize = (float) (g2d.getFont().getSize() - 0.5);
-                    newFont = g2d.getFont().deriveFont(newSize);
-                    startX += 15;
-                }
-
-                g2d.setFont(newFont);
-                textMetrics = g2d.getFontMetrics(); //get new modified metrics
-
+            if(scrollX == -textWidth + STATUS_BAR_WIDTH - HORIZONTAL_OFFSET) {
+                scrollDirection = ScrollDirection.RIGHT;
+            }
+            else if(scrollX == HORIZONTAL_OFFSET) {
+                scrollDirection = ScrollDirection.LEFT;
             }
 
+            switch(scrollDirection) {
+                case RIGHT:
+                    scrollX += 1;
+                    break;
+                case LEFT:
+                    scrollX -= 1;
+                    break;
+            }
 
-            g2d.drawString(text, startX, startY);
+            scrollingG2d.drawString(text, scrollX, scrollY);
+
+            trayIcon.setImage(scrollingImage);
+
         }
+        else { //text should fit, display it statically
+            int startX = ((STATUS_BAR_WIDTH - staticG2d.getFontMetrics().stringWidth(text)) / 2); //center text
+            int startY = VERTICAL_OFFSET;
+            staticG2d.drawString(text, startX, startY);
+            trayIcon.setImage(staticImage);
+        }
+
+        //gc these as we're not going to use them again this cycle
+        staticG2d.dispose();
+        scrollingG2d.dispose();
 
     }
 
-    private void setRenderingHints(Graphics2D g2d) {
+    private void setAntiAliasing(Graphics2D g2d) {
         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_GASP);
     }
-    private static String eval(String code) {
-        Runtime runtime = Runtime.getRuntime();
-        String[] args = { "osascript", "-e", code };
 
-        try {
-            Process process = runtime.exec(args);
-            process.waitFor();
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-            InputStream is = process.getInputStream();
-            copyLarge(is, baos, new byte[4096]);
-            return baos.toString().trim();
-
-        } catch (IOException | InterruptedException e) {
-            Log.debug(e);
-            return null;
-        }
+    private Font getDefaultFont(int size) {
+        return new Font(DEFAULT_FONT, Font.PLAIN, size);
     }
 
-    private static long copyLarge(InputStream input, OutputStream output, byte[] buffer) throws IOException {
+    private boolean textShouldScroll(String text, Graphics2D g2d) {
+        return g2d.getFontMetrics().stringWidth(text) > STATUS_BAR_WIDTH - 10;
+    }
 
-        long count = 0;
-        int n;
-        while (EOF != (n = input.read(buffer))) {
-            output.write(buffer, 0, n);
-            count += n;
+    private void resetScrollingPositions() {
+        //reset scrolling positions to default on song change
+        if(previousSpotifyMetaData != null && !previousSpotifyMetaData.equals(spotifyMetaData)) {
+            scrollX = HORIZONTAL_OFFSET;
+            scrollY = VERTICAL_OFFSET;
         }
-        return count;
     }
 
 }
