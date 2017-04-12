@@ -1,7 +1,8 @@
-package sample;
+package main;
 
 import com.oracle.tools.packager.Log;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.stage.Stage;
 
 import java.awt.*;
@@ -11,7 +12,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -21,13 +21,20 @@ import java.util.concurrent.TimeUnit;
  * This shit was thrown together way too fast for you to even think about judging the code
  */
 
-public class Main extends Application {
+public class Menify extends Application {
 
     private static final int EOF = -1;
-    private static final Map<?, ?> nativeHints = (Map<?, ?>) Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");
+    private static final String ADD_TO_STARTUP =
+            "tell application \"System Events\" \n" +
+            "  make new login item at end of login items with properties" +
+                    " {name:\"Menify\", path:(POSIX path of (path to application \"Menify\")), hidden:true}\n" +
+            "end tell";
 
     @Override
     public void start(Stage primaryStage) throws Exception {
+
+        Platform.setImplicitExit(false);
+        primaryStage.hide();
 
         TrayIcon trayIcon;
 
@@ -42,12 +49,17 @@ public class Main extends Application {
             g2d.drawString("No music playing", 160, 13);
 
             ActionListener quitListener = e -> System.exit(0);
+            ActionListener startUpAddListener = e -> eval(ADD_TO_STARTUP);
 
             PopupMenu popup = new PopupMenu();
 
-            MenuItem defaultItem = new MenuItem("Quit");
-            defaultItem.addActionListener(quitListener);
-            popup.add(defaultItem);
+            MenuItem addToStartupItem = new MenuItem("Start Menify with login");
+            MenuItem quitItem = new MenuItem("Quit");
+
+            addToStartupItem.addActionListener(startUpAddListener);
+            quitItem.addActionListener(quitListener);
+            popup.add(addToStartupItem);
+            popup.add(quitItem);
 
             trayIcon = new TrayIcon(image, "", popup);
 
@@ -220,9 +232,6 @@ public class Main extends Application {
 
 
     public static void main(String[] args) {
-        System.setProperty("apple.awt.UIElement", "true");
-        java.awt.Toolkit.getDefaultToolkit();
-
         launch(args);
     }
 }
