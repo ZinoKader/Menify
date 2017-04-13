@@ -29,7 +29,6 @@ public class Menify extends Application {
     private static final int DEFAULT_FONT_SIZE = 13;
     private static final String DEFAULT_FONT = "San Francisco";
 
-    private AppleScriptHelper appleScriptHelper = new AppleScriptHelper();
     private TrayIcon trayIcon;
 
     //start scrolling at these offsets
@@ -37,7 +36,7 @@ public class Menify extends Application {
     private int scrollY = VERTICAL_OFFSET;
     private ScrollDirection scrollDirection = ScrollDirection.LEFT; //scroll to left as default
 
-    private ScheduledExecutorService mainExecutor = Executors.newScheduledThreadPool(1);
+    private ScheduledExecutorService mainExecutor = Executors.newSingleThreadScheduledExecutor();
 
     private String spotifyMetaData;
     private String previousSpotifyMetaData;
@@ -60,8 +59,8 @@ public class Menify extends Application {
             BufferedImage placeholderImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
 
             ActionListener quitListener = action -> System.exit(0);
-            ActionListener startupAddListener = action -> appleScriptHelper.evalAppleScript(ScriptConstants.ADD_TO_STARTUP);
-            ActionListener startupRemoveListener = action -> appleScriptHelper.evalAppleScript(ScriptConstants.REMOVE_FROM_STARTUP);
+            ActionListener startupAddListener = action -> AppleScriptHelper.evalAppleScript(ScriptConstants.ADD_TO_STARTUP);
+            ActionListener startupRemoveListener = action -> AppleScriptHelper.evalAppleScript(ScriptConstants.REMOVE_FROM_STARTUP);
 
             PopupMenu popupMenu = new PopupMenu();
 
@@ -87,8 +86,8 @@ public class Menify extends Application {
                 System.exit(0);
             }
 
-            Runnable refreshPlayingText = () -> {
-                spotifyMetaData = appleScriptHelper.evalAppleScript(ScriptConstants.SPOTIFY_META_DATA_SCRIPT);
+            final Runnable refreshPlayingText = () -> {
+                spotifyMetaData = AppleScriptHelper.evalAppleScript(ScriptConstants.SPOTIFY_META_DATA_SCRIPT);
                 if(spotifyMetaData != null) {
                     drawText(spotifyMetaData);
                     previousSpotifyMetaData = spotifyMetaData;
@@ -97,7 +96,6 @@ public class Menify extends Application {
 
             //update every 50ms
             mainExecutor.scheduleAtFixedRate(refreshPlayingText, 0, 50, TimeUnit.MILLISECONDS);
-
         }
         else {
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -115,14 +113,15 @@ public class Menify extends Application {
     private void drawText(String text) {
 
         BufferedImage staticImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage scrollingImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+
         Graphics2D staticG2d = staticImage.createGraphics();
         setAntiAliasing(staticG2d);
         staticG2d.setFont(getDefaultFont(DEFAULT_FONT_SIZE));
 
-        BufferedImage scrollingImage = new BufferedImage(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         Graphics2D scrollingG2d = scrollingImage.createGraphics();
         setAntiAliasing(scrollingG2d);
-        scrollingG2d.setFont(getDefaultFont(13));
+        scrollingG2d.setFont(getDefaultFont(DEFAULT_FONT_SIZE));
 
         resetScrollingPositions();
 
@@ -131,10 +130,10 @@ public class Menify extends Application {
 
             int textWidth = scrollingG2d.getFontMetrics().stringWidth(text);
 
-            if(scrollX == -textWidth + STATUS_BAR_WIDTH - HORIZONTAL_OFFSET) {
+            if(scrollX <= -textWidth + STATUS_BAR_WIDTH - HORIZONTAL_OFFSET) {
                 scrollDirection = ScrollDirection.RIGHT;
             }
-            else if(scrollX == HORIZONTAL_OFFSET) {
+            else if(scrollX >= HORIZONTAL_OFFSET) {
                 scrollDirection = ScrollDirection.LEFT;
             }
 
@@ -159,9 +158,10 @@ public class Menify extends Application {
             trayIcon.setImage(staticImage);
         }
 
-        //gc these as we're not going to use them again this cycle
         staticG2d.dispose();
         scrollingG2d.dispose();
+        staticImage.flush();
+        scrollingImage.flush();
 
     }
 
