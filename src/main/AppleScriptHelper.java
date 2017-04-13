@@ -10,14 +10,13 @@ import java.io.OutputStream;
 class AppleScriptHelper {
 
     private static final int EOF = -1;
-    private static Runtime runtime = Runtime.getRuntime();
 
     static String evalAppleScript(String code) {
 
         String[] args = { "osascript", "-e", code };
 
         try {
-            Process process = runtime.exec(args);
+            Process process = Runtime.getRuntime().exec(args);
             process.waitFor();
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] bigByteArray = new byte[4096];
@@ -30,6 +29,7 @@ class AppleScriptHelper {
             is.close();
             baos.flush();
             baos.close();
+            process.destroyForcibly();
 
             return result;
 
@@ -44,6 +44,8 @@ class AppleScriptHelper {
         while (EOF != (n = input.read(buffer))) {
             output.write(buffer, 0, n);
         }
+        input.close();
+        output.close();
     }
 
 }
