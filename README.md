@@ -3,18 +3,18 @@
 Mac OS X status bar "now playing" for Spotify.
 Lives in the menu bar and doesn't bother you. 
 
-Sucks for very long song names, so if you're into Chopin, turn around!
+For long titles, the text will scroll back and forth to reveal the whole song title.
 
 Looks like this
 -----
 
-![Sample](https://www.zinokader.se/img/menify/sample.png)
+![Sample](https://www.zinokader.se/img/menify/sample-look.png)
 
 How to run it
 -----
 
 
-[Download the latest release here (Menify 1.1)](https://github.com/ZinoKader/Menify/releases/download/1.1/Menify-1.1.dmg)
+[Download the latest release here (Menify 1.2)](https://github.com/ZinoKader/Menify/releases/download/1.2/Menify-1.2.dmg)
 
 
 After opening the .dmg and dragging it to Applications, when trying to open the app
