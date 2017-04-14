@@ -1,10 +1,10 @@
 package main;
 
-import com.oracle.tools.packager.Log;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.stage.Stage;
+
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
@@ -37,9 +37,11 @@ public class Menify extends Application {
     private ScrollDirection scrollDirection = ScrollDirection.LEFT; //scroll to left as default
 
     private ScheduledExecutorService mainExecutor = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledExecutorService scrollingTextExecutor = Executors.newSingleThreadScheduledExecutor();
+    private static boolean isScrolling = false;
 
-    private String spotifyMetaData;
-    private String previousSpotifyMetaData;
+    private static String spotifyMetaData;
+    private static String previousSpotifyMetaData;
 
     public static void main(String[] args) {
         launch(args);
@@ -47,6 +49,8 @@ public class Menify extends Application {
 
     @Override
     public void start(Stage primaryStage) throws Exception {
+
+        Log.set(Log.LEVEL_DEBUG);
 
         //Let application live on even if no window is showing
         Platform.setImplicitExit(false);
@@ -87,15 +91,31 @@ public class Menify extends Application {
             }
 
             final Runnable refreshPlayingText = () -> {
+
                 spotifyMetaData = AppleScriptHelper.evalAppleScript(ScriptConstants.SPOTIFY_META_DATA_SCRIPT);
+     
                 if(spotifyMetaData != null) {
-                    drawText(spotifyMetaData);
-                    previousSpotifyMetaData = spotifyMetaData;
+                    if(spotifyMetaData.equals(previousSpotifyMetaData)) {
+                        Log.debug("-- same song --");
+                    } else {
+                        if(isScrolling) { //if we're already scrolling, destroy old and recreate new executor
+                            scrollingTextExecutor.shutdownNow();
+                            try {
+                                scrollingTextExecutor.awaitTermination(1, TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Log.debug("Did not terminate old scrollingTextExecutor in time");
+                            }
+                            scrollingTextExecutor = Executors.newSingleThreadScheduledExecutor();
+                        }
+                        previousSpotifyMetaData = spotifyMetaData;
+                        drawText(spotifyMetaData);
+                        Log.debug("|| song changed ||");
+                    }
                 }
             };
 
-            //update every 50ms
-            mainExecutor.scheduleAtFixedRate(refreshPlayingText, 0, 50, TimeUnit.MILLISECONDS);
+            //update every second
+            mainExecutor.scheduleAtFixedRate(refreshPlayingText, 0, 1000, TimeUnit.MILLISECONDS);
         }
         else {
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -119,50 +139,81 @@ public class Menify extends Application {
         setAntiAliasing(staticG2d);
         staticG2d.setFont(getDefaultFont(DEFAULT_FONT_SIZE));
 
-        Graphics2D scrollingG2d = scrollingImage.createGraphics();
-        setAntiAliasing(scrollingG2d);
-        scrollingG2d.setFont(getDefaultFont(DEFAULT_FONT_SIZE));
-
-        resetScrollingPositions();
 
         //check if the text is too long and needs to be displayed in a scrolling fashion
         if(textShouldScroll(text, staticG2d)) {
 
-            int textWidth = scrollingG2d.getFontMetrics().stringWidth(text);
+            scrollingTextExecutor.execute(() -> {
 
-            if(scrollX <= -textWidth + STATUS_BAR_WIDTH - HORIZONTAL_OFFSET) {
-                scrollDirection = ScrollDirection.RIGHT;
-            }
-            else if(scrollX >= HORIZONTAL_OFFSET) {
-                scrollDirection = ScrollDirection.LEFT;
-            }
+                isScrolling = true;
+                resetScrollingPositions();
 
-            switch(scrollDirection) {
-                case RIGHT:
-                    scrollX += 1;
-                    break;
-                case LEFT:
-                    scrollX -= 1;
-                    break;
-            }
+                while(spotifyMetaData.equals(previousSpotifyMetaData)) {
 
-            scrollingG2d.drawString(text, scrollX, scrollY);
+                    Graphics2D scrollingG2d = scrollingImage.createGraphics();
+                    setAntiAliasing(scrollingG2d);
+                    scrollingG2d.setFont(getDefaultFont(DEFAULT_FONT_SIZE));
 
-            trayIcon.setImage(scrollingImage);
+                    int textWidth = scrollingG2d.getFontMetrics().stringWidth(text);
+
+                    if(scrollX <= -textWidth + STATUS_BAR_WIDTH - HORIZONTAL_OFFSET) {
+                        scrollDirection = ScrollDirection.RIGHT;
+                    }
+                    else if(scrollX >= HORIZONTAL_OFFSET) {
+                        scrollDirection = ScrollDirection.LEFT;
+                    }
+
+                    switch(scrollDirection) {
+                        case RIGHT:
+                            scrollX += 1;
+                            break;
+                        case LEFT:
+                            scrollX -= 1;
+                            break;
+                    }
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Log.debug("Closed down old scrolling thread.");
+                        break;
+                    }
+
+                    scrollingG2d.setBackground(new Color(0, 0, 0, 0));
+                    scrollingG2d.clearRect(0, 0, scrollingImage.getWidth(), scrollingImage.getHeight());
+                    drawTextOutline(scrollingG2d, text, scrollX, scrollY);
+                    scrollingG2d.drawString(text, scrollX, scrollY);
+                    trayIcon.setImage(scrollingImage);
+
+                    scrollingG2d.dispose();
+                    scrollingImage.flush();
+                }
+            });
+
 
         }
         else { //text should fit, display it statically
+
+            isScrolling = false;
+
             int startX = ((STATUS_BAR_WIDTH - staticG2d.getFontMetrics().stringWidth(text)) / 2); //center text
             int startY = VERTICAL_OFFSET;
+            drawTextOutline(staticG2d, text, startX, startY);
             staticG2d.drawString(text, startX, startY);
             trayIcon.setImage(staticImage);
         }
-
+        
         staticG2d.dispose();
-        scrollingG2d.dispose();
         staticImage.flush();
-        scrollingImage.flush();
 
+    }
+
+    private void drawTextOutline(Graphics2D g2d, String text, int x, int y) {
+        g2d.setColor(Color.black);
+        g2d.drawString(text, x - 1, y - 1);
+        g2d.drawString(text, x - 1, y + 1);
+        g2d.drawString(text, x + 1, y - 1);
+        g2d.drawString(text, x + 1, y + 1);
+        g2d.setColor(Color.WHITE);
     }
 
     private void setAntiAliasing(Graphics2D g2d) {
@@ -179,10 +230,8 @@ public class Menify extends Application {
 
     private void resetScrollingPositions() {
         //reset scrolling positions to default on song change
-        if(previousSpotifyMetaData != null && !previousSpotifyMetaData.equals(spotifyMetaData)) {
-            scrollX = HORIZONTAL_OFFSET;
-            scrollY = VERTICAL_OFFSET;
-        }
+        scrollX = HORIZONTAL_OFFSET;
+        scrollY = VERTICAL_OFFSET;
     }
 
 }
