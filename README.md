@@ -14,7 +14,7 @@ How to run it
 -----
 
 
-[Download the latest release here (Menify 1.2)](https://github.com/ZinoKader/Menify/releases/download/1.2/Menify-1.2.dmg)
+[Download the latest release here (Menify 1.3)](https://github.com/ZinoKader/Menify/releases/download/1.3/Menify-1.3.dmg)
 
 
 After opening the .dmg and dragging it to Applications, when trying to open the app
